@@ -1,0 +1,122 @@
+#!/usr/bin/env python2
+# This file is covered by LGPLv2.1 or later, read LICENSE for details.
+
+import locale
+# We shall always behave the same, regardless of locale
+locale.setlocale(locale.LC_ALL, 'en_US')
+
+import argparse
+import string
+import os.path
+import shutil
+import datetime
+import tempfile
+import sys
+import subprocess
+
+def copy_sources_to_rpmbuild(rpmbuild_path, files):
+    rpmbuild_path = os.path.expanduser(rpmbuild_path)
+
+    for f in files:
+        shutil.copyfile(f.name, "%s/SOURCES/%s" % (rpmbuild_path, os.path.basename(f.name)))
+
+def make_sources_list(files):
+    ret = ""
+
+    i = 0
+    for f in files:
+        ret += "Source%i: %s\n" % (i, os.path.basename(f.name))
+        i += 1
+
+    return ret
+
+def make_installer(files):
+    prepper = ""
+    installer = ""
+    installed_files = ""
+
+    i = 0
+    for f in files:
+        prepper += "cp %%SOURCE%i .\n" % (i)
+        i += 1
+
+        installer += "cp %s $RPM_BUILD_ROOT/%%{_datadir}/scap/%%{name}/\n" % (os.path.basename(f.name))
+        installed_files += "%%{_datadir}/scap/%%{name}/%s\n" % (os.path.basename(f.name))
+
+    return prepper, installer, installed_files
+
+def create_spec(template_path, name, version, release, summary, license, files, target_file):
+    template = None
+
+    with open(template_path) as f:
+        template = string.Template(f.read())
+
+    sources_list = make_sources_list(files)
+    prepper, installer, installed_files = make_installer(files)
+
+    spec_source = template.safe_substitute(
+        __package_name = name,
+        __package_version = version,
+        __package_release = release,
+        __package_summary = summary,
+        __package_license = license,
+        __package_sources = sources_list,
+        __package_openscap_version = "0.9.12", # FIXME
+        __package_prepper = prepper,
+        __package_installer = installer,
+        __package_installed_files = installed_files,
+        __changelog_date = datetime.date.today().strftime("%a %b %d %Y")
+    )
+
+    target_file.write(spec_source)
+
+def main():
+    parser = argparse.ArgumentParser(description = "Takes given SCAP input(s) and packages them RPM")
+
+    # we choose name automatically if its missing
+    parser.add_argument("--pkg-name", dest = "pkg_name", default = None)
+    parser.add_argument("--pkg-version", dest = "pkg_version", default = "1")
+    parser.add_argument("--pkg-release", dest = "pkg_release", default = "1")
+    parser.add_argument("--pkg-summary", dest = "pkg_summary", default = "stub")
+    parser.add_argument("--pkg-license", dest = "pkg_license", default = "Unknown")
+
+    parser.add_argument("--rpmbuild-path", dest = "rpmbuild_path", default = "~/rpmbuild")
+    parser.add_argument("--rpm-destination", dest = "rpm_destination", default = ".")
+    parser.add_argument("--srpm-destination", dest = "srpm_destination", default = ".")
+    parser.add_argument("files", metavar = "FILE", nargs = '+', type = argparse.FileType('r'))
+
+    args = parser.parse_args()
+
+    rpmbuild_path = os.path.expanduser(args.rpmbuild_path)
+
+    copy_sources_to_rpmbuild(rpmbuild_path, args.files)
+
+    name = args.pkg_name
+    if name is None:
+        name, _ = os.path.splitext(os.path.basename(args.files[0].name))
+
+    temp_dir = tempfile.mkdtemp()
+    spec_file = open("%s/%s.spec" % (temp_dir, name), "w")
+    create_spec("templates/package.spec",
+        name, args.pkg_version, args.pkg_release, args.pkg_summary, args.pkg_license,
+        args.files, spec_file)
+    spec_file_path = spec_file.name
+    spec_file.close()
+
+    assert(subprocess.call(["rpmbuild", "-ba", spec_file_path], stdout = sys.stdout) == 0)
+
+    rpm_basename = "%s-%s-%s.noarch.rpm" % (name, args.pkg_version, args.pkg_release)
+    srpm_basename = "%s-%s-%s.src.rpm" % (name, args.pkg_version, args.pkg_release)
+
+    shutil.copy("%s/RPMS/noarch/%s" % (rpmbuild_path, rpm_basename), args.rpm_destination)
+    shutil.copy("%s/SRPMS/%s" % (rpmbuild_path, srpm_basename), args.srpm_destination)
+
+    print("")
+    print("Resulting RPM: '%s'" % (os.path.join(args.rpm_destination, rpm_basename)))
+    print("Resulting SRPM: '%s'" % (os.path.join(args.srpm_destination, srpm_basename)))
+    print("")
+    print("Finished!")
+    sys.exit(0)
+
+if __name__ == "__main__":
+    main()
