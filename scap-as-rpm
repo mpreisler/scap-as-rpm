@@ -71,19 +71,31 @@ def create_spec(template_path, name, version, release, summary, license, files, 
     target_file.write(spec_source)
 
 def main():
-    parser = argparse.ArgumentParser(description = "Takes given SCAP input(s) and packages them RPM")
+    parser = argparse.ArgumentParser(
+        description = "Takes given SCAP input(s) and makes an RPM package that contains them. "
+                      "The result RPM can be installed using # yum install ./package-name-1-1.rpm "
+                      "which will put the contents into /usr/share/scap. No dependency on openscap "
+                      "or scap-workbench is enforced in the output package so you can use any "
+                      "SCAP-capable scanner to evaluate the content.")
 
     # we choose name automatically if its missing
-    parser.add_argument("--pkg-name", dest = "pkg_name", default = None)
+    parser.add_argument("--pkg-name", dest = "pkg_name", default = None,
+            help = "Name of the RPM package, if none is provided the basename of the first SCAP input is used. Ex.: xyz-security-guide")
     parser.add_argument("--pkg-version", dest = "pkg_version", default = "1")
     parser.add_argument("--pkg-release", dest = "pkg_release", default = "1")
-    parser.add_argument("--pkg-summary", dest = "pkg_summary", default = "stub")
-    parser.add_argument("--pkg-license", dest = "pkg_license", default = "Unknown")
+    parser.add_argument("--pkg-summary", dest = "pkg_summary", default = "stub",
+        help = "Optional short description of the package.")
+    parser.add_argument("--pkg-license", dest = "pkg_license", default = "Unknown",
+        help = "Short name of the license that you want to publish the package under. Ex.: GPLv2+, BSD, ...")
 
     parser.add_argument("--rpmbuild-path", dest = "rpmbuild_path", default = "~/rpmbuild")
-    parser.add_argument("--rpm-destination", dest = "rpm_destination", default = ".")
-    parser.add_argument("--srpm-destination", dest = "srpm_destination", default = ".")
-    parser.add_argument("files", metavar = "FILE", nargs = '+', type = argparse.FileType('r'))
+    parser.add_argument("--rpm-destination", dest = "rpm_destination", default = ".",
+        help = "The folder (absolute or relative to CWD) where the result RPM shall be saved.")
+    parser.add_argument("--srpm-destination", dest = "srpm_destination", default = ".",
+        help = "The folder (absolute or relative to CWD) where the result SRPM shall be saved.")
+    parser.add_argument("files", metavar = "FILE", nargs = '+', type = argparse.FileType('r'),
+        help = "List of files that should be put into the result package. "
+               "These should be SCAP XML files but such requirement is not enforced.")
 
     args = parser.parse_args()
 
@@ -112,8 +124,8 @@ def main():
     shutil.copy("%s/SRPMS/%s" % (rpmbuild_path, srpm_basename), args.srpm_destination)
 
     print("")
-    print("Resulting RPM: '%s'" % (os.path.join(args.rpm_destination, rpm_basename)))
-    print("Resulting SRPM: '%s'" % (os.path.join(args.srpm_destination, srpm_basename)))
+    print("Resulting RPM:\t'%s'" % (os.path.join(args.rpm_destination, rpm_basename)))
+    print("Resulting SRPM:\t'%s'" % (os.path.join(args.srpm_destination, srpm_basename)))
     print("")
     print("Finished!")
     sys.exit(0)
