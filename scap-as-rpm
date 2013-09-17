@@ -5,20 +5,48 @@ import locale
 # We shall always behave the same, regardless of locale
 locale.setlocale(locale.LC_ALL, 'en_US')
 
-import argparse
+import sys
+
+try:
+    import argparse
+except ImportError as e:
+    sys.stderr.write("Can't import argparse. Please use Python 2.7+ or install argparse separately.\n")
+    sys.exit(1)
+
 import string
 import os.path
 import shutil
 import datetime
 import tempfile
-import sys
 import subprocess
 
-def copy_sources_to_rpmbuild(rpmbuild_path, files):
-    rpmbuild_path = os.path.expanduser(rpmbuild_path)
+if subprocess.call(["rpmbuild", "--version"], stdout = sys.stdout, stderr = sys.stderr) != 0:
+    sys.stderr.write("Could not execute `rpmbuild --version`. "
+        "Please make sure it's installed (often packaged as 'rpm-build').\n")
+    sys.exit(1)
 
+def get_rpmbuild_paths():
+    sources = subprocess.check_output(["rpm", "--eval", "%{_sourcedir}"]).strip()
+
+    if not os.path.exists(sources):
+        if subprocess.call(["rpmdev-setuptree"], stdout = sys.stdout, stderr = sys.stderr) != 0:
+            sys.stderr.write("Failed to setup rpmbuild tree. Please make sure you have rpmdev-setuptree "
+                "installed, or set it up manually. The SOURCES directory (%%{_sourcedir}) was expected at "
+                "'%s'\n" % (sources))
+            sys.exit(1)
+
+    rpm = subprocess.check_output(["rpm", "--eval", "%{_rpmdir}"]).strip()
+    srpm = subprocess.check_output(["rpm", "--eval", "%{_srcrpmdir}"]).strip()
+
+    if not os.path.exists(rpm) or not os.path.exists(srpm):
+        sys.stderr.write("The SOURCES rpmbuild directory exists but RPM or SRPM do not. Please make "
+            "sure your rpmbuild tree is setup correctly. Delete it and it will be created automatically.\n")
+
+    return sources, rpm, srpm
+
+def copy_sources_to_rpmbuild(rpmbuild_sources_path, files):
     for f in files:
-        shutil.copyfile(f.name, "%s/SOURCES/%s" % (rpmbuild_path, os.path.basename(f.name)))
+        shutil.copyfile(f.name, "%s/%s" % (rpmbuild_sources_path, os.path.basename(f.name)))
 
 def make_sources_list(files):
     ret = ""
@@ -100,7 +128,6 @@ def main():
                "inside this folder. RPM variables can be used and will be expanded as usual. It is "
                "recommended to keep the default settings.")
 
-    parser.add_argument("--rpmbuild-path", dest = "rpmbuild_path", default = "~/rpmbuild")
     parser.add_argument("--rpm-destination", dest = "rpm_destination", default = ".",
         help = "The folder (absolute or relative to CWD) where the result RPM shall be saved.")
     parser.add_argument("--srpm-destination", dest = "srpm_destination", default = ".",
@@ -111,9 +138,9 @@ def main():
 
     args = parser.parse_args()
 
-    rpmbuild_path = os.path.expanduser(args.rpmbuild_path)
+    rpmbuild_sources_path, rpmbuild_rpm_path, rpmbuild_srpm_path = get_rpmbuild_paths()
 
-    copy_sources_to_rpmbuild(rpmbuild_path, args.files)
+    copy_sources_to_rpmbuild(rpmbuild_sources_path, args.files)
 
     name = args.pkg_name
     if name is None:
@@ -134,8 +161,8 @@ def main():
     rpm_basename = "%s-%s-%s.noarch.rpm" % (name, args.pkg_version, args.pkg_release)
     srpm_basename = "%s-%s-%s.src.rpm" % (name, args.pkg_version, args.pkg_release)
 
-    shutil.copy("%s/RPMS/noarch/%s" % (rpmbuild_path, rpm_basename), args.rpm_destination)
-    shutil.copy("%s/SRPMS/%s" % (rpmbuild_path, srpm_basename), args.srpm_destination)
+    shutil.copy("%s/noarch/%s" % (rpmbuild_rpm_path, rpm_basename), args.rpm_destination)
+    shutil.copy("%s/%s" % (rpmbuild_srpm_path, srpm_basename), args.srpm_destination)
 
     print("")
     print("Resulting RPM:\t'%s'" % (os.path.join(args.rpm_destination, rpm_basename)))
