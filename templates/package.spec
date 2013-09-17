@@ -22,7 +22,7 @@ ${__package_prepper}
 %build
 
 %install
-mkdir -p $RPM_BUILD_ROOT/%{_datadir}/scap/%{name}
+mkdir -p $RPM_BUILD_ROOT/${__package_scap_location}/%{name}
 ${__package_installer}
 
 %files

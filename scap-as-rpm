@@ -30,7 +30,7 @@ def make_sources_list(files):
 
     return ret
 
-def make_installer(files):
+def make_installer(scap_location, files):
     prepper = ""
     installer = ""
     installed_files = ""
@@ -40,26 +40,33 @@ def make_installer(files):
         prepper += "cp %%SOURCE%i .\n" % (i)
         i += 1
 
-        installer += "cp %s $RPM_BUILD_ROOT/%%{_datadir}/scap/%%{name}/\n" % (os.path.basename(f.name))
-        installed_files += "%%{_datadir}/scap/%%{name}/%s\n" % (os.path.basename(f.name))
+        installer += "cp %s $RPM_BUILD_ROOT/%s/%%{name}/\n" % (os.path.basename(f.name), scap_location)
+        installed_files += "%s/%%{name}/%s\n" % (scap_location, os.path.basename(f.name))
 
     return prepper, installer, installed_files
 
-def create_spec(template_path, name, version, release, summary, license, files, target_file):
+def create_spec(template_path, name,
+        version, release, summary, license,
+        scap_location, files,
+        target_file):
     template = None
 
     with open(template_path) as f:
         template = string.Template(f.read())
 
     sources_list = make_sources_list(files)
-    prepper, installer, installed_files = make_installer(files)
+    prepper, installer, installed_files = make_installer(scap_location, files)
 
     spec_source = template.safe_substitute(
         __package_name = name,
+
         __package_version = version,
         __package_release = release,
         __package_summary = summary,
         __package_license = license,
+
+        __package_scap_location = scap_location,
+
         __package_sources = sources_list,
         __package_openscap_version = "0.9.12", # FIXME
         __package_prepper = prepper,
@@ -88,6 +95,11 @@ def main():
     parser.add_argument("--pkg-license", dest = "pkg_license", default = "Unknown",
         help = "Short name of the license that you want to publish the package under. Ex.: GPLv2+, BSD, ...")
 
+    parser.add_argument("--pkg-scap-location", dest = "pkg_scap_location", default = "%{_datadir}/scap",
+        help = "Folder where SCAP files are supposed to be installed. Each package will have its own folder "
+               "inside this folder. RPM variables can be used and will be expanded as usual. It is "
+               "recommended to keep the default settings.")
+
     parser.add_argument("--rpmbuild-path", dest = "rpmbuild_path", default = "~/rpmbuild")
     parser.add_argument("--rpm-destination", dest = "rpm_destination", default = ".",
         help = "The folder (absolute or relative to CWD) where the result RPM shall be saved.")
@@ -110,8 +122,10 @@ def main():
     temp_dir = tempfile.mkdtemp()
     spec_file = open("%s/%s.spec" % (temp_dir, name), "w")
     create_spec("templates/package.spec",
-        name, args.pkg_version, args.pkg_release, args.pkg_summary, args.pkg_license,
-        args.files, spec_file)
+        name,
+        args.pkg_version, args.pkg_release, args.pkg_summary, args.pkg_license,
+        args.pkg_scap_location, args.files,
+        spec_file)
     spec_file_path = spec_file.name
     spec_file.close()
 
