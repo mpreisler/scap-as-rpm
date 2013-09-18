@@ -188,15 +188,19 @@ def main():
 
     temp_dir = tempfile.mkdtemp()
     spec_file = open("%s/%s.spec" % (temp_dir, name), "w")
-    create_spec("templates/package.spec",
-        name,
-        args.pkg_version, args.pkg_release, args.pkg_summary, args.pkg_license,
-        args.pkg_scap_location, args.files,
-        spec_file)
-    spec_file_path = spec_file.name
-    spec_file.close()
+    try:
+        create_spec("templates/package.spec",
+            name,
+            args.pkg_version, args.pkg_release, args.pkg_summary, args.pkg_license,
+            args.pkg_scap_location, args.files,
+            spec_file)
+        spec_file_path = spec_file.name
+        spec_file.close()
 
-    assert(subprocess.call(["rpmbuild", "-ba", spec_file_path], stdout = sys.stdout) == 0)
+        assert(subprocess.call(["rpmbuild", "-ba", spec_file_path], stdout = sys.stdout) == 0)
+
+    finally:
+        shutil.rmtree(temp_dir)
 
     rpm_basename = "%s-%s-%s.noarch.rpm" % (name, args.pkg_version, args.pkg_release)
     srpm_basename = "%s-%s-%s.src.rpm" % (name, args.pkg_version, args.pkg_release)
