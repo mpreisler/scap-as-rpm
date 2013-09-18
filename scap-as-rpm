@@ -139,6 +139,12 @@ ${__package_installed_files}
 
     target_file.write(spec_source)
 
+def accessible_directory(string):
+    if not os.path.isdir(string):
+        raise argparse.ArgumentTypeError("'%s' does not seem like a directory or isn't accessible!" % (string))
+
+    return string
+
 def main():
     parser = argparse.ArgumentParser(
         description = "Takes given SCAP input(s) and makes an RPM package that contains them. "
@@ -162,9 +168,9 @@ def main():
                "inside this folder. RPM variables can be used and will be expanded as usual. It is "
                "recommended to keep the default settings.")
 
-    parser.add_argument("--rpm-destination", dest = "rpm_destination", default = ".",
+    parser.add_argument("--rpm-destination", dest = "rpm_destination", default = ".", type = accessible_directory,
         help = "The folder (absolute or relative to CWD) where the result RPM shall be saved.")
-    parser.add_argument("--srpm-destination", dest = "srpm_destination", default = ".",
+    parser.add_argument("--srpm-destination", dest = "srpm_destination", default = ".", type = accessible_directory,
         help = "The folder (absolute or relative to CWD) where the result SRPM shall be saved.")
     parser.add_argument("files", metavar = "FILE", nargs = '+', type = argparse.FileType('r'),
         help = "List of files that should be put into the result package. "
@@ -195,8 +201,8 @@ def main():
     rpm_basename = "%s-%s-%s.noarch.rpm" % (name, args.pkg_version, args.pkg_release)
     srpm_basename = "%s-%s-%s.src.rpm" % (name, args.pkg_version, args.pkg_release)
 
-    shutil.copy("%s/noarch/%s" % (rpmbuild_rpm_path, rpm_basename), args.rpm_destination)
-    shutil.copy("%s/%s" % (rpmbuild_srpm_path, srpm_basename), args.srpm_destination)
+    shutil.copy(os.path.join(rpmbuild_rpm_path, "noarch", rpm_basename), os.path.join(args.rpm_destination, rpm_basename))
+    shutil.copy("%s/%s" % (rpmbuild_srpm_path, srpm_basename), os.path.join(args.srpm_destination, rpm_basename))
 
     print("")
     print("Resulting RPM:\t'%s'" % (os.path.join(args.rpm_destination, rpm_basename)))
