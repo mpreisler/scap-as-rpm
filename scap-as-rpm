@@ -3,7 +3,7 @@
 
 import locale
 # We shall always behave the same, regardless of locale
-locale.setlocale(locale.LC_ALL, 'en_US')
+locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
 
 import sys
 
