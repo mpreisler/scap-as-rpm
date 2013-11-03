@@ -1,9 +1,9 @@
-#!/usr/bin/env python2
+#!/usr/bin/python2
 # This file is covered by LGPLv2.1 or later, read LICENSE for details.
 
 import locale
 # We shall always behave the same, regardless of locale
-locale.setlocale(locale.LC_ALL, 'en_US')
+locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
 
 import sys
 
@@ -51,10 +51,8 @@ def copy_sources_to_rpmbuild(rpmbuild_sources_path, files):
 def make_sources_list(files):
     ret = ""
 
-    i = 0
-    for f in files:
+    for (i, f) in enumerate(files):
         ret += "Source%i: %s\n" % (i, os.path.basename(f.name))
-        i += 1
 
     return ret
 
@@ -63,10 +61,8 @@ def make_installer(scap_location, files):
     installer = ""
     installed_files = ""
 
-    i = 0
-    for f in files:
+    for (i, f) in enumerate(files):
         prepper += "cp %%SOURCE%i .\n" % (i)
-        i += 1
 
         installer += "cp %s $RPM_BUILD_ROOT/%s/%%{name}/\n" % (os.path.basename(f.name), scap_location)
         installed_files += "%s/%%{name}/%s\n" % (scap_location, os.path.basename(f.name))
@@ -139,7 +135,7 @@ ${__package_installed_files}
 
     target_file.write(spec_source)
 
-class accessible_directory(object):
+class AccessibleDirectory(object):
     def __init__(self, allowNone):
         self.allowNone = allowNone
 
@@ -175,9 +171,9 @@ def main():
                "inside this folder. RPM variables can be used and will be expanded as usual. It is "
                "recommended to keep the default settings.")
 
-    parser.add_argument("--rpm-destination", dest = "rpm_destination", default = ".", type = accessible_directory(False),
+    parser.add_argument("--rpm-destination", dest = "rpm_destination", default = ".", type = AccessibleDirectory(False),
         help = "The folder (absolute or relative to CWD) where the result RPM shall be saved.")
-    parser.add_argument("--srpm-destination", dest = "srpm_destination", default = None, type = accessible_directory(True),
+    parser.add_argument("--srpm-destination", dest = "srpm_destination", default = None, type = AccessibleDirectory(True),
         help = "The folder (absolute or relative to CWD) where the result SRPM shall be saved.")
     parser.add_argument("files", metavar = "FILE", nargs = '+', type = argparse.FileType('r'),
         help = "List of files that should be put into the result package. "
@@ -204,7 +200,9 @@ def main():
         spec_file_path = spec_file.name
         spec_file.close()
 
-        assert(subprocess.call(["rpmbuild", "-ba", spec_file_path], stdout = sys.stdout) == 0)
+        ret = subprocess.call(["rpmbuild", "-ba", spec_file_path], stdout = sys.stdout)
+        if ret != 0:
+            raise RuntimeError("Failed to build RPM and SRPM for %s" % spec_file_path)
 
     finally:
         shutil.rmtree(temp_dir)
