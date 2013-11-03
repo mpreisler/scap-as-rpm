@@ -51,10 +51,8 @@ def copy_sources_to_rpmbuild(rpmbuild_sources_path, files):
 def make_sources_list(files):
     ret = ""
 
-    i = 0
-    for f in files:
+    for (i, f) in enumerate(files):
         ret += "Source%i: %s\n" % (i, os.path.basename(f.name))
-        i += 1
 
     return ret
 
@@ -63,10 +61,8 @@ def make_installer(scap_location, files):
     installer = ""
     installed_files = ""
 
-    i = 0
-    for f in files:
+    for (i, f) in enumerate(files):
         prepper += "cp %%SOURCE%i .\n" % (i)
-        i += 1
 
         installer += "cp %s $RPM_BUILD_ROOT/%s/%%{name}/\n" % (os.path.basename(f.name), scap_location)
         installed_files += "%s/%%{name}/%s\n" % (scap_location, os.path.basename(f.name))
