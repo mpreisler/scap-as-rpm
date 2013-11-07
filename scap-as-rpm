@@ -79,6 +79,11 @@ import datetime
 import tempfile
 import subprocess
 
+class CannotContinueError(Exception):
+    """Exception class for cases where processing cannot continue."""
+
+    pass
+
 if subprocess.call(["rpmbuild", "--version"], stdout = sys.stdout, stderr = sys.stderr) != 0:
     sys.stderr.write("Could not execute `rpmbuild --version`. "
         "Please make sure it's installed (often packaged as 'rpm-build').\n")
@@ -92,7 +97,7 @@ def get_rpmbuild_paths():
             sys.stderr.write("Failed to setup rpmbuild tree. Please make sure you have rpmdev-setuptree "
                 "installed, or set it up manually. The SOURCES directory (%%{_sourcedir}) was expected at "
                 "'%s'\n" % (sources))
-            sys.exit(1)
+            raise CannotContinueError()
 
     rpm = subprocess.check_output(["rpm", "--eval", "%{_rpmdir}"]).strip()
     srpm = subprocess.check_output(["rpm", "--eval", "%{_srcrpmdir}"]).strip()
@@ -230,23 +235,23 @@ def main():
     if not args.rpm_destination:
         print("--rpm-destination has to be specified")
         parser.print_help()
-        sys.exit(1)
+        return 1
 
     if not os.path.isdir(args.rpm_destination):
         print("'%s' does not seem like a directory or isn't accessible!" % args.rpm_destination)
         parser.print_help()
-        sys.exit(1)
+        return 1
 
     if args.srpm_destination is not None and not os.path.isdir(args.srpm_destination):
         print("'%s' does not seem like a directory or isn't accessible!" % args.srpm_destination)
         parser.print_help()
-        sys.exit(1)
+        return 1
 
     for fpath in args.files:
         if not os.path.exists(fpath):
             print("File '%s' does not exist or isn't accessible!" % fpath)
             parser.print_help()
-            sys.exit(1)
+            return 1
 
     args.files = [open(fpath, "r") for fpath in args.files]
 
@@ -289,7 +294,12 @@ def main():
         print("Resulting SRPM:\t'%s'" % (os.path.join(args.srpm_destination, srpm_basename)))
     print("")
     print("Finished!")
-    sys.exit(0)
+
+    return 0
 
 if __name__ == "__main__":
-    main()
+    try:
+        ret = main()
+        sys.exit(ret)
+    except CannotContinueError:
+        sys.exit(1)
