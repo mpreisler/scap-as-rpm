@@ -9,9 +9,68 @@ import sys
 
 try:
     import argparse
-except ImportError as e:
-    sys.stderr.write("Can't import argparse. Please use Python 2.7+ or install argparse separately.\n")
-    sys.exit(1)
+    ParserClass = argparse.ArgumentParser
+except ImportError:
+    # XXX: get rid of this block once any old Python not having argparse by
+    # default needs to be supported
+    import optparse
+
+    class ArgOptParserShim(optparse.OptionParser):
+        """
+        A shim class allowing usage of an OptionParser instance as an
+        ArgumentParser instance as far as the needs of this script go.
+
+        """
+
+        def __init__(self, *args, **kwargs):
+            optparse.OptionParser.__init__(self, *args, **kwargs)
+
+            # name of the attribute to store args in
+            self._args_name = None
+            self._args_spec = ""
+            self._args_description = ""
+
+        def add_argument(self, argument, *args, **kwargs):
+            # get and remove the "metavar" argument
+            metavar = kwargs.pop("metavar", "ARG")
+
+            # we don't care about nargs
+            kwargs.pop("nargs", None)
+
+            if argument.startswith("--"):
+                return self.add_option(argument, *args, **kwargs)
+            else:
+                self._args_name = argument
+                self._args_spec = "{0} [{0}...]".format(metavar)
+                self._args_description = "  %s" % self._args_spec
+                desc = kwargs.get("help")
+                if desc:
+                    self._args_description += "\t%s" % desc
+
+        def parse_args(self, args=None, values=None):
+            opts, args = optparse.OptionParser.parse_args(self, args, values)
+            if self._args_spec:
+                if not args:
+                    print "Missing arguments: %s" % self._args_spec
+                    self.print_help()
+
+                setattr(opts, self._args_name, args)
+
+            return opts
+
+        def print_help(self, fobj=None):
+            if self._args_spec:
+                self.usage = self.usage + " " + self._args_spec
+
+            optparse.OptionParser.print_help(self, fobj)
+
+            if self._args_spec:
+                if fobj:
+                    fobj.write("%s\n" % self._args_description)
+                else:
+                    print self._args_description
+
+    ParserClass = ArgOptParserShim
 
 import string
 import os.path
@@ -19,6 +78,11 @@ import shutil
 import datetime
 import tempfile
 import subprocess
+
+class CannotContinueError(Exception):
+    """Exception class for cases where processing cannot continue."""
+
+    pass
 
 if subprocess.call(["rpmbuild", "--version"], stdout = sys.stdout, stderr = sys.stderr) != 0:
     sys.stderr.write("Could not execute `rpmbuild --version`. "
@@ -33,7 +97,7 @@ def get_rpmbuild_paths():
             sys.stderr.write("Failed to setup rpmbuild tree. Please make sure you have rpmdev-setuptree "
                 "installed, or set it up manually. The SOURCES directory (%%{_sourcedir}) was expected at "
                 "'%s'\n" % (sources))
-            sys.exit(1)
+            raise CannotContinueError()
 
     rpm = subprocess.check_output(["rpm", "--eval", "%{_rpmdir}"]).strip()
     srpm = subprocess.check_output(["rpm", "--eval", "%{_srcrpmdir}"]).strip()
@@ -135,21 +199,8 @@ ${__package_installed_files}
 
     target_file.write(spec_source)
 
-class AccessibleDirectory(object):
-    def __init__(self, allowNone):
-        self.allowNone = allowNone
-
-    def __call__(self, value):
-        if self.allowNone and value is None:
-            return None
-
-        if not os.path.isdir(value):
-            raise argparse.ArgumentTypeError("'%s' does not seem like a directory or isn't accessible!" % (value))
-
-        return value
-
 def main():
-    parser = argparse.ArgumentParser(
+    parser = ParserClass(
         description = "Takes given SCAP input(s) and makes an RPM package that contains them. "
                       "The result RPM can be installed using # yum install ./package-name-1-1.rpm "
                       "which will put the contents into /usr/share/scap. No dependency on openscap "
@@ -171,15 +222,38 @@ def main():
                "inside this folder. RPM variables can be used and will be expanded as usual. It is "
                "recommended to keep the default settings.")
 
-    parser.add_argument("--rpm-destination", dest = "rpm_destination", default = ".", type = AccessibleDirectory(False),
+    parser.add_argument("--rpm-destination", dest = "rpm_destination", default = ".",
         help = "The folder (absolute or relative to CWD) where the result RPM shall be saved.")
-    parser.add_argument("--srpm-destination", dest = "srpm_destination", default = None, type = AccessibleDirectory(True),
+    parser.add_argument("--srpm-destination", dest = "srpm_destination", default = None,
         help = "The folder (absolute or relative to CWD) where the result SRPM shall be saved.")
-    parser.add_argument("files", metavar = "FILE", nargs = '+', type = argparse.FileType('r'),
+    parser.add_argument("files", metavar="FILE", nargs="+",
         help = "List of files that should be put into the result package. "
                "These should be SCAP XML files but such requirement is not enforced.")
 
     args = parser.parse_args()
+
+    if not args.rpm_destination:
+        print("--rpm-destination has to be specified")
+        parser.print_help()
+        return 1
+
+    if not os.path.isdir(args.rpm_destination):
+        print("'%s' does not seem like a directory or isn't accessible!" % args.rpm_destination)
+        parser.print_help()
+        return 1
+
+    if args.srpm_destination is not None and not os.path.isdir(args.srpm_destination):
+        print("'%s' does not seem like a directory or isn't accessible!" % args.srpm_destination)
+        parser.print_help()
+        return 1
+
+    for fpath in args.files:
+        if not os.path.exists(fpath):
+            print("File '%s' does not exist or isn't accessible!" % fpath)
+            parser.print_help()
+            return 1
+
+    args.files = [open(fpath, "r") for fpath in args.files]
 
     rpmbuild_sources_path, rpmbuild_rpm_path, rpmbuild_srpm_path = get_rpmbuild_paths()
 
@@ -220,7 +294,12 @@ def main():
         print("Resulting SRPM:\t'%s'" % (os.path.join(args.srpm_destination, srpm_basename)))
     print("")
     print("Finished!")
-    sys.exit(0)
+
+    return 0
 
 if __name__ == "__main__":
-    main()
+    try:
+        ret = main()
+        sys.exit(ret)
+    except CannotContinueError:
+        sys.exit(1)
